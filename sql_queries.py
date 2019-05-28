@@ -4,23 +4,61 @@ import configparser
 # CONFIG
 config = configparser.ConfigParser()
 config.read('dwh.cfg')
+DWH_IAM_ROLE_NAME   = config.get("IAM_ROLE", "ARN")
+SONGS_MANIFEST      = config.get("MANIFEST", "SONGS_MANIFEST")
+LOG_JSONPATH        = config.get("S3", "LOG_JSONPATH")
+LOG_DATA            = config.get("S3", "LOG_DATA")
 
 # DROP TABLES
 
-staging_events_table_drop = ""
-staging_songs_table_drop = ""
-songplay_table_drop = ""
-user_table_drop = ""
-song_table_drop = ""
-artist_table_drop = ""
-time_table_drop = ""
+staging_events_table_drop = "DROP TABLE IF EXISTS staging_events"
+staging_songs_table_drop = "DROP TABLE IF EXISTS staging_songs"
+songplay_table_drop = "DROP TABLE IF EXISTS songplays"
+user_table_drop = "DROP TABLE IF EXISTS users"
+song_table_drop = "DROP TABLE IF EXISTS songs"
+artist_table_drop = "DROP TABLE IF EXISTS artists"
+time_table_drop = "DROP TABLE IF EXISTS time"
 
 # CREATE TABLES
 
 staging_events_table_create= ("""
+    CREATE TABLE IF NOT EXISTS staging_events
+        (artist_name varchar(1000) ENCODE ZSTD,
+        auth varchar(20),
+        first_name varchar(100),
+        gender char,
+        itemInSession int,
+        last_name varchar(100),
+        length decimal(8,3),
+        level varchar(4),
+        location varchar(1000),
+        method varchar(10),
+        page varchar(30),
+        registration bigint,
+        session_id int,
+        song_title varchar(1000) ENCODE ZSTD,
+        status int,
+        start_time bigint,
+        user_agent varchar(4096) ENCODE ZSTD,
+        user_id int)
+    SORTKEY(start_time)
 """)
 
 staging_songs_table_create = ("""
+    CREATE TABLE IF NOT EXISTS staging_songs
+        (num_songs int,
+        artist_id varchar(20) ,
+        latitude decimal(9,6),
+        longitude decimal(9,6),
+        location varchar(1000),
+        artist_name varchar(1000) ENCODE ZSTD,
+        song_id varchar(20),
+        title varchar(1000) ENCODE ZSTD,
+        duration numeric(8,4),
+        year int)
+    DISTKEY(song_id)
+    SORTKEY(song_id)
+        
 """)
 
 # songplays - records in event data associated with song plays i.e. records with page NextSong
@@ -29,13 +67,20 @@ songplay_table_create = ("""
     CREATE TABLE IF NOT EXISTS songplays
         (songplay_id bigint IDENTITY(0,1),
         start_time bigint NOT NULL,   
-        user_id int NOT NULL,
-        level varchar(4) NOT NULL,
-        song_id varchar(20) NOT NULL, 
-        artist_id varchar(20) NOT NULL,
-        session_id int NOT NULL,
-        location varchar(60),
-        user_agent varchar(4096) NOT NULL)
+        user_id int,
+        level varchar(4) ENCODE ZSTD,
+        song_id varchar(20), 
+        artist_id varchar(20) ENCODE ZSTD,
+        session_id int,
+        location varchar(60) ENCODE ZSTD,
+        user_agent varchar(4096) ENCODE ZSTD,
+        PRIMARY KEY(songplay_id),
+        FOREIGN KEY(start_time) REFERENCES time(start_time),
+        FOREIGN KEY(user_id) REFERENCES users(user_id),
+        FOREIGN KEY(song_id) REFERENCES songs(song_id),
+        FOREIGN KEY(artist_id) REFERENCES artists(artist_id))
+    DISTKEY(song_id)
+    SORTKEY(song_id, start_time)
 """)
 
 # users - users in the app
@@ -43,62 +88,197 @@ songplay_table_create = ("""
 user_table_create = ("""
     CREATE TABLE IF NOT EXISTS users
         (user_id int NOT NULL,
-        first_name varchar(30) NOT NULL,
-        last_name varchar(30) NOT NULL,
-        gender varchar(1) NOT NULL,
-        level varchar(4) NOT NULL)
-        disttyle ALL
+        first_name varchar(100) NOT NULL,
+        last_name varchar(100) NOT NULL,
+        gender char NOT NULL,
+        level varchar(4) NOT NULL,
+        PRIMARY KEY(user_id))
+    DISTSTYLE ALL
+    SORTKEY(user_id)
 """) 
 
 # songs - songs in music database
 # song_id, title, artist_id, year, duration
 song_table_create = ("""
-    CREATE TABLE IF NOT EXISTS users
-        (song_id int NOT NULL,
-        title varchar(100) NOT NULL,
-        artist_id int NOT NULL,
-        year int,
-        duration int)
+    CREATE TABLE IF NOT EXISTS songs
+        (song_id varchar(20) NOT NULL,
+        title varchar(500) NOT NULL ENCODE ZSTD,
+        artist_id varchar(20) NOT NULL ENCODE ZSTD,
+        year int NOT NULL ENCODE ZSTD,
+        duration numeric(8,4) NOT NULL ENCODE ZSTD,
+        PRIMARY KEY(song_id))
+    DISTKEY(song_id)
+    SORTKEY(song_id)
 """)
 
 #artists - artists in music database
 #artist_id, name, location, lattitude, longitude
 artist_table_create = ("""
-""") diststyle ALL;
+    CREATE TABLE IF NOT EXISTS artists
+        (artist_id varchar(20) NOT NULL,
+        name varchar(500) NOT NULL ENCODE ZSTD,
+        location varchar(60),
+        latitude decimal(9,6),
+        longitude decimal(9,6),
+        PRIMARY KEY(artist_id))
+    DISTSTYLE ALL
+    SORTKEY(artist_id)
+""") 
 
 #time - timestamps of records in songplays broken down into specific units
-#start_time, hour, day, week, month, year, weekday
+# start_time, hour, day, week, month, year, weekday
 time_table_create = ("""
+    CREATE TABLE IF NOT EXISTS time
+        (start_time bigint NOT NULL,
+        hour int NOT NULL,
+        day int NOT NULL,
+        week int NOT NULL,
+        month int NOT NULL,
+        year int NOT NULL,
+        weekday varchar(10) NOT NULL,
+        PRIMARY KEY(start_time))
+    SORTKEY(start_time)
 """)
 
 # STAGING TABLES
-
+# Uses the prefix method to load files in parallel
 staging_events_copy = ("""
-""").format()
+    COPY staging_events 
+    FROM {}
+    IAM_ROLE {}
+    JSON {} REGION 'us-west-2'
+    STATUPDATE OFF
+    COMPUPDATE OFF
+    MAXERROR 10
+""").format(LOG_DATA, DWH_IAM_ROLE_NAME, LOG_JSONPATH)
 
+# Uses the manifest file method to load files in parallel
 staging_songs_copy = ("""
-""").format()
+    COPY staging_songs 
+    FROM {} 
+    IAM_ROLE {} 
+    manifest 
+    JSON 'auto' 
+    REGION 'us-west-2'
+    STATUPDATE OFF
+    COMPUPDATE OFF
+    MAXERROR 10
+""").format(SONGS_MANIFEST, DWH_IAM_ROLE_NAME)
 
 # FINAL TABLES
 
+# A left join with a combined song and artist table 
+# ensures that any song play entries for which there is 
+# no matching song title in the songs table are still 
+# captured.  The combined song and artist table ensure 
+# that there is no match with the same song title for 
+# a different artist or the same artist for a different
+# song.
+#
+# Ignore entries from the logs which are not related
+# to song plays by comparing the log.page and log.method.
 songplay_table_insert = ("""
+    INSERT INTO songplays (start_time,
+                            user_id,
+                            level,
+                            song_id,
+                            artist_id,
+                            session_id,
+                            location,
+                            user_agent)
+    (SELECT log.start_time,
+            log.user_id,
+            log.level, 
+            song_artist.song_id,
+            song_artist.artist_id,
+            log.session_id,
+            log.location,
+            log.user_agent
+    FROM staging_events log
+        LEFT JOIN (SELECT s.title as song_title,
+                          a.name as artist_name,
+                   		  s.song_id as song_id,
+                   		  a.artist_id as artist_id
+                   FROM songs s
+                   JOIN artists a
+                   ON s.artist_id = a.artist_id) song_artist
+        ON LOWER(song_artist.song_title) LIKE LOWER(log.song_title)
+        AND LOWER(song_artist.artist_name) LIKE LOWER(log.artist_name)
+    WHERE LOWER(log.page) = 'nextsong'
+        AND LOWER(log.method) ='put')
 """)
 
+# Ensure that there are no null user_ids and user_id is unique
 user_table_insert = ("""
+    INSERT INTO users
+    (SELECT user_id, 
+            max(first_name),
+            max(last_name),
+            max(gender),
+            max(level)
+    FROM staging_events 
+    WHERE user_id is not NULL 
+    GROUP BY user_id)   -- Ensure primary key is unique
 """)
 
+# ensure song_id is unique
 song_table_insert = ("""
+    INSERT INTO songs
+    (SELECT st_songs.song_id,
+            max(st_songs.title),
+            max(st_songs.artist_id), 
+            max(st_songs.year), 
+            max(st_songs.duration)
+    FROM staging_songs st_songs
+    GROUP BY st_songs.song_id)  -- Ensure primary key is unique
 """)
 
+# ensure artist_id is unique
 artist_table_insert = ("""
+    INSERT INTO artists
+    (SELECT st_songs.artist_id,
+        max(st_songs.artist_name),
+        max(st_songs.location),
+        max(st_songs.latitude),
+        max(st_songs.longitude)
+    FROM staging_songs st_songs
+    GROUP BY st_songs.artist_id) -- Ensure primary key is unique
 """)
 
+# Select only the times for log entries related to song plays
+# by filtering on log.page and log.method.
+# Ensure start_time values are unique.
 time_table_insert = ("""
+    INSERT INTO time
+    (SELECT t.start_time,
+        DATEPART(h, t.unix_timestamp),
+        DATEPART(d, t.unix_timestamp),
+        DATEPART(w, t.unix_timestamp),
+        DATEPART(mon, t.unix_timestamp),
+        DATEPART(y, t.unix_timestamp),
+        CASE DATEPART(dow, t.unix_timestamp)
+            WHEN 0 THEN 'Sunday'
+            WHEN 1 THEN 'Monday'
+            WHEN 2 THEN 'Tuesday'
+            WHEN 3 THEN 'Wednesday'
+            WHEN 4 THEN 'Thursday'
+            WHEN 5 THEN 'Friday'
+            WHEN 6 THEN 'Saturday'
+        END
+    FROM (SELECT start_time,
+        TIMESTAMP 'epoch' + (start_time/1000) * INTERVAL '1 second' AS unix_timestamp
+        FROM staging_events log
+        WHERE start_time is not NULL
+        AND LOWER(log.page) = 'nextsong'
+        AND LOWER(log.method) ='put'
+        GROUP BY start_time  
+        ORDER BY start_time) t)
 """)
 
 # QUERY LISTS
 
-create_table_queries = [staging_events_table_create, staging_songs_table_create, songplay_table_create, user_table_create, song_table_create, artist_table_create, time_table_create]
+create_table_queries = [staging_events_table_create, staging_songs_table_create, user_table_create, song_table_create, artist_table_create, time_table_create, songplay_table_create]
 drop_table_queries = [staging_events_table_drop, staging_songs_table_drop, songplay_table_drop, user_table_drop, song_table_drop, artist_table_drop, time_table_drop]
-copy_table_queries = [staging_events_copy, staging_songs_copy]
-insert_table_queries = [songplay_table_insert, user_table_insert, song_table_insert, artist_table_insert, time_table_insert]
+copy_table_queries = [staging_songs_copy, staging_events_copy]
+insert_table_queries = [user_table_insert, song_table_insert, artist_table_insert, time_table_insert, songplay_table_insert]
+
