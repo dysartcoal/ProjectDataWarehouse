@@ -22,10 +22,10 @@ It would be useful to receive feedback on the decisions made egarding the table 
 
 The following files form part of this project:
 
-- ** create_tables.py ** : Run this python file to create the staging tables, fact and dimension tables.
-- ** etl.py ** : Run this python file to load the data from the source files on S3 into the staging tables.  Inserts the records into the fact and dimension tables.
-- ** sql_queries.py ** : This file supports the create_tables.py and etl.py code by providing the SQL queries which create the tables and load the data.
-- ** dwh.cfg ** : Holds the configuration settings for the ETL system.  A manifest file was created to enable loading of the song files using the COPY method and this configuration file contains a the url for that file.
+- **create_tables.py** : Run this python file to create the staging tables, fact and dimension tables.
+- **etl.py** : Run this python file to load the data from the source files on S3 into the staging tables.  Inserts the records into the fact and dimension tables.
+- **sql_queries.py** : This file supports the create_tables.py and etl.py code by providing the SQL queries which create the tables and load the data.
+- **dwh.cfg** : Holds the configuration settings for the ETL system.  A manifest file was created to enable loading of the song files using the COPY method and this configuration file contains the url for that file.
 
 
 ## Staging Table Design
