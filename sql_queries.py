@@ -66,7 +66,7 @@ staging_songs_table_create = ("""
 songplay_table_create = ("""
     CREATE TABLE IF NOT EXISTS songplays
         (songplay_id bigint IDENTITY(0,1),
-        start_time bigint NOT NULL,   
+        start_time timestamp NOT NULL,   
         user_id int,
         level varchar(4) ENCODE ZSTD,
         song_id varchar(20), 
@@ -88,10 +88,10 @@ songplay_table_create = ("""
 user_table_create = ("""
     CREATE TABLE IF NOT EXISTS users
         (user_id int NOT NULL,
-        first_name varchar(100) NOT NULL,
-        last_name varchar(100) NOT NULL,
-        gender char NOT NULL,
-        level varchar(4) NOT NULL,
+        first_name varchar(100),
+        last_name varchar(100),
+        gender char,
+        level varchar(4),
         PRIMARY KEY(user_id))
     DISTSTYLE ALL
     SORTKEY(user_id)
@@ -102,10 +102,10 @@ user_table_create = ("""
 song_table_create = ("""
     CREATE TABLE IF NOT EXISTS songs
         (song_id varchar(20) NOT NULL,
-        title varchar(500) NOT NULL ENCODE ZSTD,
+        title varchar(500) ENCODE ZSTD,
         artist_id varchar(20) NOT NULL ENCODE ZSTD,
-        year int NOT NULL ENCODE ZSTD,
-        duration numeric(8,4) NOT NULL ENCODE ZSTD,
+        year int ENCODE ZSTD,
+        duration numeric(8,4) ENCODE ZSTD,
         PRIMARY KEY(song_id))
     DISTKEY(song_id)
     SORTKEY(song_id)
@@ -116,7 +116,7 @@ song_table_create = ("""
 artist_table_create = ("""
     CREATE TABLE IF NOT EXISTS artists
         (artist_id varchar(20) NOT NULL,
-        name varchar(500) NOT NULL ENCODE ZSTD,
+        name varchar(500) ENCODE ZSTD,
         location varchar(60),
         latitude decimal(9,6),
         longitude decimal(9,6),
@@ -129,13 +129,13 @@ artist_table_create = ("""
 # start_time, hour, day, week, month, year, weekday
 time_table_create = ("""
     CREATE TABLE IF NOT EXISTS time
-        (start_time bigint NOT NULL,
-        hour int NOT NULL,
-        day int NOT NULL,
-        week int NOT NULL,
-        month int NOT NULL,
-        year int NOT NULL,
-        weekday varchar(10) NOT NULL,
+        (start_time timestamp NOT NULL,
+        hour int,
+        day int ,
+        week int,
+        month int,
+        year int ,
+        weekday varchar(10),
         PRIMARY KEY(start_time))
     SORTKEY(start_time)
 """)
@@ -186,26 +186,22 @@ songplay_table_insert = ("""
                             session_id,
                             location,
                             user_agent)
-    (SELECT log.start_time,
-            log.user_id,
+    (SELECT log.ts, 
+            log.user_id, 
             log.level, 
-            song_artist.song_id,
-            song_artist.artist_id,
-            log.session_id,
-            log.location,
+            st_songs.song_id, 
+            st_songs.artist_id, 
+            log.session_id, 
+            log.location, 
             log.user_agent
-    FROM staging_events log
-        LEFT JOIN (SELECT s.title as song_title,
-                          a.name as artist_name,
-                   		  s.song_id as song_id,
-                   		  a.artist_id as artist_id
-                   FROM songs s
-                   JOIN artists a
-                   ON s.artist_id = a.artist_id) song_artist
-        ON LOWER(song_artist.song_title) LIKE LOWER(log.song_title)
-        AND LOWER(song_artist.artist_name) LIKE LOWER(log.artist_name)
-    WHERE LOWER(log.page) = 'nextsong'
-        AND LOWER(log.method) ='put')
+      FROM (SELECT TIMESTAMP 'epoch' + start_time/1000 * interval '1 second' AS ts, 
+            *
+            FROM staging_events
+            WHERE page='NextSong') log
+      LEFT JOIN staging_songs st_songs
+      ON lower(log.song_title) = lower(st_songs.title)
+      AND lower(log.artist_name) = lower(st_songs.artist_name)
+      AND ROUND(log.length) = ROUND(st_songs.duration) --Don't lose data in the join due to small data discrepancies)
 """)
 
 # Ensure that there are no null user_ids and user_id is unique
@@ -250,13 +246,13 @@ artist_table_insert = ("""
 # Ensure start_time values are unique.
 time_table_insert = ("""
     INSERT INTO time
-    (SELECT t.start_time,
-        DATEPART(h, t.unix_timestamp),
-        DATEPART(d, t.unix_timestamp),
-        DATEPART(w, t.unix_timestamp),
-        DATEPART(mon, t.unix_timestamp),
-        DATEPART(y, t.unix_timestamp),
-        CASE DATEPART(dow, t.unix_timestamp)
+    (SELECT sp.start_time,
+        DATEPART(h, sp.start_time),
+        DATEPART(d, sp.start_time),
+        DATEPART(w, sp.start_time),
+        DATEPART(mon, sp.start_time),
+        DATEPART(y, sp.start_time),
+        CASE DATEPART(dow, sp.start_time)
             WHEN 0 THEN 'Sunday'
             WHEN 1 THEN 'Monday'
             WHEN 2 THEN 'Tuesday'
@@ -265,14 +261,7 @@ time_table_insert = ("""
             WHEN 5 THEN 'Friday'
             WHEN 6 THEN 'Saturday'
         END
-    FROM (SELECT start_time,
-        TIMESTAMP 'epoch' + (start_time/1000) * INTERVAL '1 second' AS unix_timestamp
-        FROM staging_events log
-        WHERE start_time is not NULL
-        AND LOWER(log.page) = 'nextsong'
-        AND LOWER(log.method) ='put'
-        GROUP BY start_time  
-        ORDER BY start_time) t)
+    FROM songplays sp)
 """)
 
 # QUERY LISTS
@@ -280,5 +269,5 @@ time_table_insert = ("""
 create_table_queries = [staging_events_table_create, staging_songs_table_create, user_table_create, song_table_create, artist_table_create, time_table_create, songplay_table_create]
 drop_table_queries = [staging_events_table_drop, staging_songs_table_drop, songplay_table_drop, user_table_drop, song_table_drop, artist_table_drop, time_table_drop]
 copy_table_queries = [staging_songs_copy, staging_events_copy]
-insert_table_queries = [user_table_insert, song_table_insert, artist_table_insert, time_table_insert, songplay_table_insert]
+insert_table_queries = [songplay_table_insert, user_table_insert, song_table_insert, artist_table_insert, time_table_insert]
 

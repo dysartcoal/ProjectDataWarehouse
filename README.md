@@ -77,9 +77,10 @@ Due to the fact that the song files did not have a common prefix the manifest me
 
 A small amount of data cleaning was carried our during the INSERT INTO SELECT phase of populating the fact and dimension tables from the staging tables:
 
-- Only unique ids were selected for entry into users, songs, artists and time.
+- Only unique ids were selected for entry into users, songs, artists and time.  GROUP BY was used instead of DISTINCT in case of updates to the data e.g. a user changing level from 'free' to 'paid' which would result in two entries for a single user_id.
 - Only records in the staging_events table corresponding to "NextSong" actions were selected for insertion into songplays and time.
-- Records in the staging_events table without a matching song_id and artist_id were written to the songplays table so that the user action of playing the song was not lost.   There would be potential for the data to be joined against new song data in the future if the song title and artist name were captured somewhere.  This is an item for future discussion with Sparkify.
+- Records in the staging_events table without a matching song_id, artist_id and duration were written to the songplays table so that the user action of playing the song was not lost.   
+- When identifying song_id and artist_id values from the songs database the duration of songs was compared at the level of seconds rather than to several decimal places to avoid missing matches because of small data inaccuracies.
 
 ## Conclusion
 
