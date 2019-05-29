@@ -201,7 +201,8 @@ songplay_table_insert = ("""
       LEFT JOIN staging_songs st_songs
       ON lower(log.song_title) = lower(st_songs.title)
       AND lower(log.artist_name) = lower(st_songs.artist_name)
-      AND ROUND(log.length) = ROUND(st_songs.duration) --Don't lose data in the join due to small data discrepancies)
+      AND ROUND(log.length) = ROUND(st_songs.duration) --Don't lose data in the join due to small data discrepancies
+      )
 """)
 
 # Ensure that there are no null user_ids and user_id is unique
