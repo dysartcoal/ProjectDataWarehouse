@@ -5,9 +5,9 @@ import configparser
 config = configparser.ConfigParser()
 config.read('dwh.cfg')
 DWH_IAM_ROLE_NAME   = config.get("IAM_ROLE", "ARN")
-SONGS_MANIFEST      = config.get("MANIFEST", "SONGS_MANIFEST")
 LOG_JSONPATH        = config.get("S3", "LOG_JSONPATH")
 LOG_DATA            = config.get("S3", "LOG_DATA")
+SONG_DATA           = config.get("S3", "SONG_DATA")
 
 # DROP TABLES
 
@@ -146,24 +146,24 @@ staging_events_copy = ("""
     COPY staging_events 
     FROM {}
     IAM_ROLE {}
-    JSON {} REGION 'us-west-2'
+    JSON {}
+    REGION 'us-west-2'
     STATUPDATE OFF
     COMPUPDATE OFF
     MAXERROR 10
 """).format(LOG_DATA, DWH_IAM_ROLE_NAME, LOG_JSONPATH)
 
-# Uses the manifest file method to load files in parallel
+# Uses the common folder method to load files in parallel
 staging_songs_copy = ("""
     COPY staging_songs 
     FROM {} 
     IAM_ROLE {} 
-    manifest 
     JSON 'auto' 
     REGION 'us-west-2'
     STATUPDATE OFF
     COMPUPDATE OFF
     MAXERROR 10
-""").format(SONGS_MANIFEST, DWH_IAM_ROLE_NAME)
+""").format(SONG_DATA, DWH_IAM_ROLE_NAME)
 
 # FINAL TABLES
 
